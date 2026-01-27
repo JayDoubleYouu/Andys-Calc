@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY || '5b3ce3597851110001cf6248e4b6b0c0c6c2844ba8c54977baf909b1';
+  const API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY || 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijc1Y2M4ZDQ1OGVjNjRjNTZhNjkwMGQxYTE4NjBjY2Y5IiwiaCI6Im11cm11cjY0In0=';
   const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${API_KEY}&start=${fromLng},${fromLat}&end=${toLng},${toLat}`;
 
   try {
