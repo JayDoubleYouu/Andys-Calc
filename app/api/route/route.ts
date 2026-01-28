@@ -15,14 +15,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Get API key from environment variable (required for security)
-  // Set this in Vercel: Settings → Environment Variables
-  // For local dev: create .env.local with NEXT_PUBLIC_ORS_API_KEY=your_key
+  // Get API key from environment variable
+  // For Vercel: Set in Settings → Environment Variables
+  // For local dev: Set in .env.local file (already configured)
   const API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY;
   
   if (!API_KEY) {
     return NextResponse.json(
-      { error: 'API key not configured. Please set NEXT_PUBLIC_ORS_API_KEY environment variable in Vercel settings or .env.local file.' },
+      { error: 'API key not configured. Please set NEXT_PUBLIC_ORS_API_KEY environment variable. See VERCEL_SETUP.md for instructions.' },
       { status: 500 }
     );
   }
