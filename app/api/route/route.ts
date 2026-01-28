@@ -15,7 +15,17 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY || 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijc1Y2M4ZDQ1OGVjNjRjNTZhNjkwMGQxYTE4NjBjY2Y5IiwiaCI6Im11cm11cjY0In0=';
+  // Get API key from environment variable (required for security)
+  // Set this in Vercel: Settings → Environment Variables
+  // For local dev: create .env.local with NEXT_PUBLIC_ORS_API_KEY=your_key
+  const API_KEY = process.env.NEXT_PUBLIC_ORS_API_KEY;
+  
+  if (!API_KEY) {
+    return NextResponse.json(
+      { error: 'API key not configured. Please set NEXT_PUBLIC_ORS_API_KEY environment variable in Vercel settings or .env.local file.' },
+      { status: 500 }
+    );
+  }
   const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${API_KEY}&start=${fromLng},${fromLat}&end=${toLng},${toLat}`;
 
   try {
