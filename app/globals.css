@@ -1,3 +1,37 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@keyframes ambulance-drive {
+  0% {
+    left: -50px;
+    transform: translateY(-50%) scaleX(-1);
+  }
+  100% {
+    left: calc(100% + 50px);
+    transform: translateY(-50%) scaleX(-1);
+  }
+}
+
+.ambulance-drive {
+  left: 0;
+  animation: ambulance-drive 18s linear infinite;
+}
+
+@keyframes flash-lights {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% {
+    opacity: 0.4;
+    box-shadow: 0 0 4px currentColor;
+  }
+}
+
+.ambulance-light {
+  animation: flash-lights 0.4s ease-in-out infinite;
+}
+.ambulance-light:nth-child(2) {
+  animation-delay: 0.2s;
+}

@@ -50,9 +50,11 @@ All data (stations, vehicles, and notes) is stored in browser localStorage. This
 
 ## API
 
-Uses OpenRouteService API for route calculations. A default API key is included for testing, but for production use:
+Uses OpenRouteService API for route calculations. **An API key is required:**
 
 1. Get a free API key at https://openrouteservice.org/dev/#/signup
 2. Create a `.env.local` file in the project root
 3. Add: `NEXT_PUBLIC_ORS_API_KEY=your_api_key_here`
-# Andy-calc
+4. For Vercel deployment, add the environment variable in Vercel project settings
+
+**Security Note:** Never commit API keys to git. Always use environment variables.

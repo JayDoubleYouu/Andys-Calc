@@ -18,7 +18,7 @@ The default API key has expired. You need to get your own free API key to use th
 4. **Add it to your project**:
    - Open the `.env.local` file in the project root
    - Replace `your_api_key_here` with your actual API key
-   - The line should look like: `NEXT_PUBLIC_ORS_API_KEY=5b3ce3597851110001cf6248e4b6b0c0c6c2844ba8c54977baf909b1`
+   - The line should look like: `NEXT_PUBLIC_ORS_API_KEY=your_actual_api_key_here`
    - Save the file
 
 5. **Restart your dev server**:

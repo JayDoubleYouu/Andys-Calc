@@ -12,13 +12,16 @@ export function getStations(): Station[] {
   
   const stored = localStorage.getItem(STATIONS_KEY);
   if (!stored) {
-    saveStations(defaultStations);
-    return defaultStations;
+    const copy = defaultStations.map(s => ({ ...s }));
+    saveStations(copy);
+    return copy;
   }
   try {
     return JSON.parse(stored);
   } catch {
-    return defaultStations;
+    const copy = defaultStations.map(s => ({ ...s }));
+    saveStations(copy);
+    return copy;
   }
 }
 
@@ -58,13 +61,7 @@ export function getVehicles(): Vehicle[] {
   }
   try {
     const parsed = JSON.parse(stored);
-    // Always check if stored vehicles match the current default count and structure
-    // If count doesn't match or structure is invalid, reset to defaults
-    if (parsed.length !== defaultVehicles.length) {
-      saveVehicles(defaultVehicles);
-      return defaultVehicles;
-    }
-    // If stored vehicles are the old default 3 vehicles, replace with new defaults
+    // Only reset when we have the OLD default (3 vehicles with placeholder make) or invalid structure
     if (parsed.length <= 3 && parsed.every((v: Vehicle) => v.make === 'Vehicle')) {
       saveVehicles(defaultVehicles);
       return defaultVehicles;
@@ -75,12 +72,7 @@ export function getVehicles(): Vehicle[] {
       saveVehicles(defaultVehicles);
       return defaultVehicles;
     }
-    // Check if LB20KHW exists in stored vehicles - if not, reset to defaults
-    const hasLB20KHW = parsed.some((v: Vehicle) => v.registration === 'LB20KHW');
-    if (!hasLB20KHW) {
-      saveVehicles(defaultVehicles);
-      return defaultVehicles;
-    }
+    // User-added or removed vehicles are allowed; no length check so manual/bulk vehicles persist
     return parsed;
   } catch {
     return defaultVehicles;
