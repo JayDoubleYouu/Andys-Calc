@@ -1,25 +1,46 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Vehicle } from '@/types';
-import { getVehicles, addVehicle, updateVehicle, deleteVehicle, saveVehicles } from '@/utils/storage';
-import { defaultVehicles } from '@/lib/vehicles';
+import { createClient } from '@/lib/supabase/client';
+import { fetchVehicles, getProfileRole, addVehicleSupabase, updateVehicleSupabase, deleteVehicleSupabase } from '@/lib/data';
 import { validateMPG } from '@/lib/vehicles';
+
+const CAN_ACCESS = ['superuser', 'admin', 'manager'];
 
 export default function VehicleManager() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [canManage, setCanManage] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ make: '', model: '', mpg: '', registration: '' });
   const [error, setError] = useState<string | null>(null);
 
+  const loadVehicles = async () => {
+    const supabase = createClient();
+    try {
+      const [list, role] = await Promise.all([fetchVehicles(supabase), getProfileRole(supabase)]);
+      if (!CAN_ACCESS.includes(role)) {
+        router.replace('/');
+        return;
+      }
+      setVehicles(list);
+      setCanManage(role === 'superuser' || role === 'admin' || role === 'manager');
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to load vehicles');
+      setVehicles([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadVehicles();
   }, []);
-
-  const loadVehicles = () => {
-    setVehicles(getVehicles());
-  };
 
   const handleAdd = () => {
     setEditingId(null);
@@ -30,23 +51,32 @@ export default function VehicleManager() {
 
   const handleEdit = (vehicle: Vehicle) => {
     setEditingId(vehicle.id);
-    setFormData({ make: vehicle.make, model: vehicle.model, mpg: vehicle.mpg.toString(), registration: vehicle.registration });
+    setFormData({
+      make: vehicle.make,
+      model: vehicle.model,
+      mpg: vehicle.mpg.toString(),
+      registration: vehicle.registration,
+    });
     setError(null);
     setShowForm(true);
   };
 
-  const handleDelete = (id: string) => {
-    if (confirm('Are you sure you want to delete this vehicle?')) {
-      deleteVehicle(id);
-      loadVehicles();
+  const handleDelete = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this vehicle?')) return;
+    const supabase = createClient();
+    try {
+      await deleteVehicleSupabase(supabase, id);
+      await loadVehicles();
       if (editingId === id) {
         setEditingId(null);
         setFormData({ make: '', model: '', mpg: '', registration: '' });
       }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete');
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -66,65 +96,73 @@ export default function VehicleManager() {
       return;
     }
 
-    if (editingId) {
-      updateVehicle(editingId, {
-        make: formData.make.trim(),
-        model: formData.model.trim(),
-        mpg,
-        registration: formData.registration.trim().toUpperCase(),
-      });
-    } else {
-      const newVehicle: Vehicle = {
-        id: Date.now().toString(),
-        make: formData.make.trim(),
-        model: formData.model.trim(),
-        mpg,
-        registration: formData.registration.trim().toUpperCase(),
-      };
-      addVehicle(newVehicle);
+    const supabase = createClient();
+    try {
+      if (editingId) {
+        await updateVehicleSupabase(supabase, editingId, {
+          make: formData.make.trim(),
+          model: formData.model.trim(),
+          mpg,
+          registration: formData.registration.trim().toUpperCase(),
+        });
+      } else {
+        const newVehicle: Vehicle = {
+          id: Date.now().toString(),
+          make: formData.make.trim(),
+          model: formData.model.trim(),
+          mpg,
+          registration: formData.registration.trim().toUpperCase(),
+        };
+        await addVehicleSupabase(supabase, newVehicle);
+      }
+      await loadVehicles();
+      setEditingId(null);
+      setFormData({ make: '', model: '', mpg: '', registration: '' });
+      setShowForm(false);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to save vehicle');
     }
-
-    loadVehicles();
-    setEditingId(null);
-    setFormData({ make: '', model: '', mpg: '', registration: '' });
-    setShowForm(false);
   };
+
+  if (loading) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-6">Vehicle Management</h1>
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Vehicle Management</h1>
+      {!canManage && (
+        <p className="text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mb-4 text-sm">
+          You can view vehicles only. Only admins and managers can add or edit vehicles.
+        </p>
+      )}
+      {error && (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded mb-4 text-sm">
+          {error}
+        </div>
+      )}
 
-      <div className="mb-6 flex gap-2">
-        <button
-          onClick={handleAdd}
-          className="bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700"
-        >
-          Add New Vehicle
-        </button>
-        <button
-          onClick={() => {
-            if (confirm('Reset all vehicles to default database? This will replace your current vehicles with the full list of 516 vehicles.')) {
-              saveVehicles(defaultVehicles);
-              loadVehicles();
-            }
-          }}
-          className="bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700"
-        >
-          Reset to Default Vehicles
-        </button>
-      </div>
+      {canManage && (
+        <div className="mb-6">
+          <button
+            onClick={handleAdd}
+            className="bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700"
+          >
+            Add New Vehicle
+          </button>
+        </div>
+      )}
 
-      {showForm && (
+      {showForm && canManage && (
         <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded mb-6">
           <h2 className="font-semibold mb-4">
             {editingId ? 'Edit Vehicle' : 'Add New Vehicle'}
           </h2>
-          
-          {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-2 rounded mb-4">
-              {error}
-            </div>
-          )}
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             <div>
@@ -195,7 +233,7 @@ export default function VehicleManager() {
         </form>
       )}
 
-      <div className="bg-white border rounded">
+      <div className="bg-white border rounded overflow-x-auto">
         <table className="w-full">
           <thead className="bg-orange-100">
             <tr>
@@ -203,30 +241,32 @@ export default function VehicleManager() {
               <th className="p-3 text-left">Model</th>
               <th className="p-3 text-left">Registration</th>
               <th className="p-3 text-left">MPG</th>
-              <th className="p-3 text-left">Actions</th>
+              {canManage && <th className="p-3 text-left">Actions</th>}
             </tr>
           </thead>
           <tbody>
-            {vehicles.map(vehicle => (
+            {vehicles.map((vehicle) => (
               <tr key={vehicle.id} className="border-t">
                 <td className="p-3">{vehicle.make || 'N/A'}</td>
                 <td className="p-3">{vehicle.model || 'N/A'}</td>
                 <td className="p-3">{vehicle.registration || 'N/A'}</td>
-                <td className="p-3">{vehicle.mpg || 'N/A'}</td>
-                <td className="p-3">
-                  <button
-                    onClick={() => handleEdit(vehicle)}
-                    className="text-orange-600 hover:underline mr-3"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(vehicle.id)}
-                    className="text-red-600 hover:underline"
-                  >
-                    Delete
-                  </button>
-                </td>
+                <td className="p-3">{vehicle.mpg ?? 'N/A'}</td>
+                {canManage && (
+                  <td className="p-3">
+                    <button
+                      onClick={() => handleEdit(vehicle)}
+                      className="text-orange-600 hover:underline mr-3"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(vehicle.id)}
+                      className="text-red-600 hover:underline"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>

@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Station, Vehicle, Calculation } from '@/types';
-import { getStations, getVehicles, saveNote, getNotes, deleteNote, clearAllNotes } from '@/utils/storage';
+import { createClient } from '@/lib/supabase/client';
+import { fetchStations, fetchVehicles, fetchNotes, saveNoteSupabase, deleteNoteSupabase, clearAllNotesSupabase } from '@/lib/data';
 import { getRouteDistance } from '@/lib/api';
 import { geocodePostcode } from '@/lib/geocode';
 
@@ -20,18 +21,42 @@ export default function Calculator() {
   const [time, setTime] = useState<number | null>(null);
   const [fuel, setFuel] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    setStations(getStations());
-    setVehicles(getVehicles());
-    loadNotes();
-  }, []);
-
-  const loadNotes = () => {
-    setNotes(getNotes().sort((a, b) => b.timestamp - a.timestamp));
+  const loadNotes = async () => {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    try {
+      const data = await fetchNotes(supabase, user.id);
+      setNotes(data);
+    } catch {
+      setNotes([]);
+    }
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      try {
+        const [s, v] = await Promise.all([fetchStations(supabase), fetchVehicles(supabase)]);
+        if (!cancelled) {
+          setStations(s);
+          setVehicles(v);
+        }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user && !cancelled) await loadNotes();
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load data');
+      } finally {
+        if (!cancelled) setDataLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Filter stations based on search terms
   const filteredFromStations = stations.filter(station => {
@@ -113,7 +138,11 @@ export default function Calculator() {
         // Already handled above
         return;
       }
-      setError(`Failed to calculate route: ${errorMessage}. Please check the postcodes are valid and try again.`);
+      const isApiKeyError = errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('not configured');
+      const message = isApiKeyError
+        ? 'Route calculator needs an API key. Add NEXT_PUBLIC_ORS_API_KEY to .env.local (see .env.example), then restart the dev server.'
+        : `Failed to calculate route: ${errorMessage}. Please check the postcodes are valid and try again.`;
+      setError(message);
       console.error('Route calculation error:', err);
     } finally {
       setLoading(false);
@@ -161,7 +190,7 @@ export default function Calculator() {
     );
   });
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!fromStation || !toStation || !selectedVehicle || !distance || !time || fuel === null) {
       setError('Please complete the calculation before saving');
       return;
@@ -176,7 +205,7 @@ export default function Calculator() {
       return;
     }
 
-    const calculation = {
+    const calculation: Calculation = {
       id: Date.now().toString(),
       from: from.name,
       to: to.name,
@@ -193,16 +222,30 @@ export default function Calculator() {
       timestamp: Date.now(),
     };
 
-    saveNote(calculation);
-    setSaved(true);
-    loadNotes();
-    setTimeout(() => setSaved(false), 3000);
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError('You must be signed in to save');
+      return;
+    }
+    try {
+      await saveNoteSupabase(supabase, user.id, calculation);
+      setSaved(true);
+      await loadNotes();
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to save');
+    }
   };
 
-  const handleDeleteNote = (id: string) => {
-    if (confirm('Are you sure you want to delete this calculation?')) {
-      deleteNote(id);
-      loadNotes();
+  const handleDeleteNote = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this calculation?')) return;
+    const supabase = createClient();
+    try {
+      await deleteNoteSupabase(supabase, id);
+      await loadNotes();
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete');
     }
   };
 
@@ -253,6 +296,14 @@ export default function Calculator() {
     link.click();
     document.body.removeChild(link);
   };
+
+  if (dataLoading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <p className="text-gray-600">Loading calculator...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-7xl mx-auto p-6">
@@ -423,10 +474,16 @@ export default function Calculator() {
                   Export to CSV
                 </button>
                 <button
-                  onClick={() => {
-                    if (confirm('Are you sure you want to clear all notes? This cannot be undone.')) {
-                      clearAllNotes();
-                      loadNotes();
+                  onClick={async () => {
+                    if (!confirm('Are you sure you want to clear all notes? This cannot be undone.')) return;
+                    const supabase = createClient();
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (!user) return;
+                    try {
+                      await clearAllNotesSupabase(supabase, user.id);
+                      await loadNotes();
+                    } catch (e: any) {
+                      setError(e?.message || 'Failed to clear');
                     }
                   }}
                   className="bg-red-600 text-white py-2 px-4 rounded hover:bg-red-700"

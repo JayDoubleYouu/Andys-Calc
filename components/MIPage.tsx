@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Calculation, Vehicle } from '@/types';
-import { getNotes, getVehicles } from '@/utils/storage';
+import { createClient } from '@/lib/supabase/client';
+import { fetchNotes, fetchVehicles, getProfileRole, fetchProfilesForSuperuser } from '@/lib/data';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { findVehicleByRegistration } from '@/lib/vehicles';
 
@@ -23,28 +24,21 @@ interface MonthlyData {
 }
 
 export default function MIPage() {
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleStats, setVehicleStats] = useState<VehicleStats[]>([]);
   const [selectedVehicle, setSelectedVehicle] = useState<string | null>(null);
   const [searchRegistration, setSearchRegistration] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<string>('');
   const [allNotes, setAllNotes] = useState<Calculation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [role, setRole] = useState<string>('');
+  const [profiles, setProfiles] = useState<{ id: string; username: string | null; role: string }[]>([]);
+  const [viewingUserId, setViewingUserId] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = () => {
-    const notes = getNotes();
-    setAllNotes(notes);
-    calculateStats(notes);
-  };
-
-  const calculateStats = (notes: Calculation[]) => {
-    const vehicles = getVehicles();
+  const calculateStats = useCallback((notes: Calculation[], vehiclesList: Vehicle[]) => {
     const statsMap = new Map<string, VehicleStats>();
 
-    // Initialize stats for all vehicles
-    vehicles.forEach(vehicle => {
+    vehiclesList.forEach(vehicle => {
       statsMap.set(vehicle.id, {
         vehicle,
         totalMiles: 0,
@@ -73,15 +67,53 @@ export default function MIPage() {
       .sort((a, b) => b.totalMiles - a.totalMiles);
 
     setVehicleStats(statsArray);
-  };
+  }, []);
 
-  // Apply filters function
+  const loadForUser = useCallback(async (userId: string) => {
+    const supabase = createClient();
+    setLoading(true);
+    try {
+      const [notesData, vehiclesData] = await Promise.all([
+        fetchNotes(supabase, userId),
+        fetchVehicles(supabase),
+      ]);
+      setAllNotes(notesData);
+      setVehicles(vehiclesData);
+      calculateStats(notesData, vehiclesData);
+    } catch {
+      setAllNotes([]);
+      setVehicles([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [calculateStats]);
+
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setAllNotes([]);
+        setVehicles([]);
+        setLoading(false);
+        return;
+      }
+      const r = await getProfileRole(supabase);
+      setRole(r);
+      setViewingUserId(user.id);
+      if (r === 'superuser') {
+        const list = await fetchProfilesForSuperuser(supabase);
+        setProfiles(list);
+      }
+      await loadForUser(user.id);
+    };
+    load();
+  }, [loadForUser]);
+
   const applyFilters = useCallback((notes: Calculation[]): Calculation[] => {
     let filtered = [...notes];
 
-    // Filter by registration
     if (searchRegistration.trim()) {
-      const vehicles = getVehicles();
       const vehicle = findVehicleByRegistration(vehicles, searchRegistration.trim());
       if (vehicle) {
         filtered = filtered.filter(n => n.vehicle.id === vehicle.id);
@@ -101,7 +133,7 @@ export default function MIPage() {
     }
 
     return filtered;
-  }, [searchRegistration, selectedMonth]);
+  }, [searchRegistration, selectedMonth, vehicles]);
 
   // Calculate overall totals
   const overallTotals = useMemo(() => {
@@ -169,13 +201,12 @@ export default function MIPage() {
   const filteredVehicleStats = useMemo(() => {
     if (!searchRegistration.trim()) return vehicleStats;
     
-    const vehicles = getVehicles();
     const vehicle = findVehicleByRegistration(vehicles, searchRegistration.trim());
     if (!vehicle) return [];
 
     const stats = vehicleStats.find(s => s.vehicle.id === vehicle.id);
     return stats ? [stats] : [];
-  }, [vehicleStats, searchRegistration]);
+  }, [vehicleStats, searchRegistration, vehicles]);
 
   const formatDate = (timestamp: number) => {
     return new Date(timestamp).toLocaleString();
@@ -194,9 +225,42 @@ export default function MIPage() {
     ? filteredVehicleStats.find(s => s.vehicle.id === selectedVehicle)
     : null;
 
+  if (loading) {
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <h1 className="text-2xl font-bold mb-6">Management Information</h1>
+        <p className="text-gray-600">Loading...</p>
+      </div>
+    );
+  }
+
+  const handleViewUserChange = (userId: string) => {
+    setViewingUserId(userId);
+    loadForUser(userId);
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-6">Management Information</h1>
+      {role === 'superuser' && profiles.length > 0 && (
+        <div className="mb-4 flex items-center gap-2">
+          <label htmlFor="mi-user-select" className="text-sm font-medium text-gray-700">
+            View MI for:
+          </label>
+          <select
+            id="mi-user-select"
+            value={viewingUserId || ''}
+            onChange={(e) => handleViewUserChange(e.target.value)}
+            className="p-2 border border-gray-300 rounded"
+          >
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.username || p.id.slice(0, 8)} ({p.role})
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {allNotes.length === 0 ? (
         <div className="bg-gray-50 p-8 rounded text-center border">

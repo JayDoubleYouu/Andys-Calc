@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Header from "@/components/Header";
+import LayoutClient from "@/components/LayoutClient";
 
 export const metadata: Metadata = {
   title: "Andys Calculator",
@@ -15,10 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <Header />
-        <main className="min-h-screen bg-orange-50">
-          {children}
-        </main>
+        <LayoutClient>{children}</LayoutClient>
       </body>
     </html>
   );

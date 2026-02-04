@@ -389,10 +389,27 @@ export const defaultStations: Station[] = [
   }
 ];
 
+// Looser UK postcode format: outcode (1-4 chars) + optional space + incode (1 digit + 2 letters)
+// Covers standard (SW1A 1AA, M1 1AA), GIR 0AA, and variants with/without space
+const UK_POSTCODE_REGEX = /^[A-Z][A-Z0-9]{0,3}\s*[0-9][A-Z]{2}$/i;
+
 export function validatePostcode(postcode: string): boolean {
-  // Basic UK postcode validation
-  const ukPostcodeRegex = /^[A-Z]{1,2}\d{1,2}[A-Z]?\s?\d[A-Z]{2}$/i;
-  return ukPostcodeRegex.test(postcode.trim());
+  const trimmed = postcode.replace(/\s+/g, ' ').trim();
+  if (!trimmed || trimmed.length < 5 || trimmed.length > 8) return false;
+  return UK_POSTCODE_REGEX.test(trimmed);
+}
+
+/** Validate postcode via Postcodes.io API (returns true if geocode succeeds). Use when format passes but you want to confirm the postcode exists. */
+export async function validatePostcodeWithAPI(postcode: string): Promise<boolean> {
+  const trimmed = postcode.replace(/\s+/g, '').toUpperCase();
+  if (!trimmed) return false;
+  try {
+    const res = await fetch(`/api/geocode?postcode=${encodeURIComponent(trimmed)}`);
+    const data = await res.json();
+    return !data.error && (typeof data.latitude === 'number' && typeof data.longitude === 'number');
+  } catch {
+    return false;
+  }
 }
 
 export function findStationById(stations: Station[], id: string): Station | undefined {

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { getStations, getVehicles, saveNote, addStation, addVehicle } from '@/utils/storage';
+import { useState, useEffect } from 'react';
+import { Station, Vehicle } from '@/types';
+import { createClient } from '@/lib/supabase/client';
+import { fetchStations, fetchVehicles, saveNoteSupabase, addStationSupabase, addVehicleSupabase } from '@/lib/data';
 import { findStationByNameFuzzy } from '@/lib/stations';
 import { findVehicleByRegistration, getMPGByMakeModel } from '@/lib/vehicles';
 import { geocodePostcode } from '@/lib/geocode';
 import { getRouteDistance } from '@/lib/api';
-import { Vehicle } from '@/types';
 
 interface ProcessingResult {
   success: boolean;
@@ -25,6 +26,8 @@ interface MissingVehicle {
 }
 
 export default function BulkUpload() {
+  const [stations, setStations] = useState<Station[]>([]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [inputData, setInputData] = useState('');
   const [processing, setProcessing] = useState(false);
   const [results, setResults] = useState<ProcessingResult[]>([]);
@@ -35,6 +38,21 @@ export default function BulkUpload() {
   const [vehicleForm, setVehicleForm] = useState({ make: '', model: '', mpg: '' });
   const [validatedRows, setValidatedRows] = useState<Array<{ registration: string; from: string; to: string }>>([]);
   const [readyToProcess, setReadyToProcess] = useState(false);
+
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient();
+      try {
+        const [s, v] = await Promise.all([fetchStations(supabase), fetchVehicles(supabase)]);
+        setStations(s);
+        setVehicles(v);
+      } catch {
+        setStations([]);
+        setVehicles([]);
+      }
+    };
+    load();
+  }, []);
 
   const parseInput = (text: string): Array<{ registration: string; from: string; to: string }> => {
     const lines = text.trim().split('\n').filter(l => l.trim());
@@ -78,7 +96,7 @@ export default function BulkUpload() {
       return;
     }
 
-    const allVehicles = getVehicles();
+    const allVehicles = vehicles;
     const missing = new Map<string, MissingVehicle>();
     const validRows: Array<{ registration: string; from: string; to: string }> = [];
 
@@ -132,14 +150,13 @@ export default function BulkUpload() {
     }
   };
 
-  const handleAddVehicle = () => {
+  const handleAddVehicle = async () => {
     if (!vehicleForm.make.trim() || !vehicleForm.model.trim()) {
       alert('Please enter make and model');
       return;
     }
 
     const mpg = parseFloat(vehicleForm.mpg) || getMPGByMakeModel(vehicleForm.make.trim(), vehicleForm.model.trim());
-    
     const newVehicle: Vehicle = {
       id: Date.now().toString(),
       make: vehicleForm.make.trim(),
@@ -148,14 +165,20 @@ export default function BulkUpload() {
       mpg,
     };
 
-    addVehicle(newVehicle);
+    const supabase = createClient();
+    try {
+      await addVehicleSupabase(supabase, newVehicle);
+      const [, v] = await Promise.all([fetchStations(supabase), fetchVehicles(supabase)]);
+      setVehicles(v);
+    } catch (e: any) {
+      alert(e?.message || 'Failed to add vehicle (you may need admin/manager role)');
+      return;
+    }
 
-    // Update missing vehicles map
     const updated = new Map(missingVehicles);
     updated.delete(currentVehicleReg);
     setMissingVehicles(updated);
 
-    // Add this row to validated rows
     const rows = parseInput(inputData);
     const row = rows.find(r => r.registration.toUpperCase() === currentVehicleReg);
     if (row) {
@@ -164,7 +187,6 @@ export default function BulkUpload() {
 
     setShowVehicleModal(false);
 
-    // If more missing vehicles, show next one
     if (updated.size > 0) {
       const nextReg = Array.from(updated.keys())[0];
       showVehicleAddModal(nextReg);
@@ -200,6 +222,13 @@ export default function BulkUpload() {
       return;
     }
 
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert('You must be signed in to process.');
+      return;
+    }
+
     setProcessing(true);
     setResults([]);
     setProgress({ current: 0, total: validatedRows.length });
@@ -207,6 +236,7 @@ export default function BulkUpload() {
     const newResults: ProcessingResult[] = [];
     let successCount = 0;
     let failCount = 0;
+    let allStations: Station[] = [...stations];
 
     for (let i = 0; i < validatedRows.length; i++) {
       const row = validatedRows[i];
@@ -227,7 +257,7 @@ export default function BulkUpload() {
         }
 
         // Find vehicle (must exist - skip if not found)
-        const allVehicles = getVehicles();
+        const allVehicles = vehicles;
         const registrationUpper = (row.registration || '').trim().toUpperCase();
         const vehicle = findVehicleByRegistration(allVehicles, registrationUpper);
         
@@ -245,8 +275,7 @@ export default function BulkUpload() {
           continue; // Skip this row - do NOT save to notes or MI
         }
 
-        // Find or create stations
-        const allStations = getStations();
+        // Find or create stations (allStations is mutable; we push when we add)
         const cleanFromName = (row.from || '').replace(/\s*W\/S\s*/i, '').trim();
         if (!cleanFromName) {
           newResults.push({
@@ -284,7 +313,21 @@ export default function BulkUpload() {
             name: stationName,
             postcode: defaultPostcode,
           };
-          addStation(fromStation);
+          try {
+            await addStationSupabase(supabase, fromStation);
+            allStations = [...allStations, fromStation];
+          } catch {
+            newResults.push({
+              success: false,
+              row: i + 1,
+              registration: row.registration,
+              from: row.from,
+              to: row.to,
+              error: 'Failed to add station (need admin/manager role)',
+            });
+            failCount++;
+            continue;
+          }
         }
 
         const cleanToName = (row.to || '').replace(/\s*W\/S\s*/i, '').trim();
@@ -324,7 +367,21 @@ export default function BulkUpload() {
             name: stationName,
             postcode: defaultPostcode,
           };
-          addStation(toStation);
+          try {
+            await addStationSupabase(supabase, toStation);
+            allStations = [...allStations, toStation];
+          } catch {
+            newResults.push({
+              success: false,
+              row: i + 1,
+              registration: row.registration,
+              from: row.from,
+              to: row.to,
+              error: 'Failed to add station (need admin/manager role)',
+            });
+            failCount++;
+            continue;
+          }
         }
 
         // Geocode stations
@@ -388,7 +445,20 @@ export default function BulkUpload() {
           timestamp: Date.now(),
         };
 
-        saveNote(calculation);
+        try {
+          await saveNoteSupabase(supabase, user.id, calculation);
+        } catch (e: any) {
+          newResults.push({
+            success: false,
+            row: i + 1,
+            registration: row.registration,
+            from: row.from,
+            to: row.to,
+            error: e?.message || 'Failed to save note',
+          });
+          failCount++;
+          continue;
+        }
         successCount++;
         newResults.push({
           success: true,
