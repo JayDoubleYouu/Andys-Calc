@@ -2,34 +2,31 @@
 
 ## Environment Variables
 
-To deploy this application on Vercel, you need to set the following environment variable:
+To deploy this application on Vercel, set these in your project:
 
-### OpenRouteService API Key
+**Path:** Vercel Dashboard → your project → **Settings** → **Environment Variables**
 
-1. Go to your Vercel project settings
-2. Navigate to **Settings** → **Environment Variables**
-3. Add a new environment variable:
-   - **Name**: `NEXT_PUBLIC_ORS_API_KEY`
-   - **Value**: `eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6Ijc1Y2M4ZDQ1OGVjNjRjNTZhNjkwMGQxYTE4NjBjY2Y5IiwiaCI6Im11cm11cjY0In0=`
-   - **Environment**: Production, Preview, and Development (select all)
-   
-   **Important**: This API key is for your use only. Do not share it publicly.
+Add each variable, then choose **Production**, **Preview**, and **Development**. Click **Save**. After adding or changing variables, **redeploy** (Deployments → ⋮ on latest → Redeploy).
 
-4. Click **Save**
-5. **Redeploy** your application for the changes to take effect
+### 1. Supabase (required for sign-in and data)
 
-## Important Notes
+| Name | Value |
+|------|--------|
+| `NEXT_PUBLIC_SUPABASE_URL` | Your project URL, e.g. `https://xxxxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Your project anon/public key from Supabase Dashboard → Settings → API |
 
-- **The API key is REQUIRED** - the application will not work without it
-- After adding the environment variable, you must redeploy for it to take effect
-- The `.env.local` file is for local development only and is not deployed to Vercel
-- Never commit API keys to git - always use environment variables
+Without these, the app will show “Sign-in is not configured” on the login page.
 
-## Deployment Steps
+### 2. OpenRouteService (for route calculator)
 
-1. Push your code to GitHub (already done)
-2. Import your GitHub repository in Vercel
-3. Add the environment variable as described above
-4. Deploy
+| Name | Value |
+|------|--------|
+| `NEXT_PUBLIC_ORS_API_KEY` | Your key from [openrouteservice.org](https://openrouteservice.org/dev/#/signup) |
 
-The application should now work correctly on Vercel!
+## Summary
+
+1. Add **NEXT_PUBLIC_SUPABASE_URL** and **NEXT_PUBLIC_SUPABASE_ANON_KEY** (from Supabase).
+2. Add **NEXT_PUBLIC_ORS_API_KEY** if you use the route calculator.
+3. **Redeploy** after saving environment variables.
+
+The `.env.local` file is for local development only and is **not** deployed to Vercel. Never commit secrets to git.

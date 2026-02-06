@@ -140,7 +140,7 @@ export default function Calculator() {
       }
       const isApiKeyError = errorMessage.toLowerCase().includes('api key') || errorMessage.toLowerCase().includes('not configured');
       const message = isApiKeyError
-        ? 'Route calculator needs an API key. Add NEXT_PUBLIC_ORS_API_KEY to .env.local (see .env.example), then restart the dev server.'
+        ? 'Route calculator needs an API key. Add NEXT_PUBLIC_ORS_API_KEY. On Vercel: Project Settings → Environment Variables, then redeploy. Locally: .env.local then restart the dev server.'
         : `Failed to calculate route: ${errorMessage}. Please check the postcodes are valid and try again.`;
       setError(message);
       console.error('Route calculation error:', err);

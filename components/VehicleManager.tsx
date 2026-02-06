@@ -18,6 +18,7 @@ export default function VehicleManager() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ make: '', model: '', mpg: '', registration: '' });
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadVehicles = async () => {
     const supabase = createClient();
@@ -30,11 +31,13 @@ export default function VehicleManager() {
       setVehicles(list);
       setCanManage(role === 'superuser' || role === 'admin' || role === 'manager');
       setError(null);
+      router.refresh();
     } catch (e: any) {
       setError(e?.message || 'Failed to load vehicles');
       setVehicles([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -63,16 +66,19 @@ export default function VehicleManager() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this vehicle?')) return;
+    setVehicles((prev) => prev.filter((v) => v.id !== id));
+    if (editingId === id) {
+      setEditingId(null);
+      setFormData({ make: '', model: '', mpg: '', registration: '' });
+      setShowForm(false);
+    }
     const supabase = createClient();
     try {
       await deleteVehicleSupabase(supabase, id);
       await loadVehicles();
-      if (editingId === id) {
-        setEditingId(null);
-        setFormData({ make: '', model: '', mpg: '', registration: '' });
-      }
     } catch (e: any) {
       setError(e?.message || 'Failed to delete');
+      await loadVehicles();
     }
   };
 
@@ -97,30 +103,45 @@ export default function VehicleManager() {
     }
 
     const supabase = createClient();
+    const make = formData.make.trim();
+    const model = formData.model.trim();
+    const registration = formData.registration.trim().toUpperCase();
     try {
       if (editingId) {
+        setVehicles((prev) =>
+          prev.map((v) =>
+            v.id === editingId
+              ? { ...v, make, model, mpg, registration }
+              : v
+          )
+        );
+        setShowForm(false);
+        setEditingId(null);
+        setFormData({ make: '', model: '', mpg: '', registration: '' });
         await updateVehicleSupabase(supabase, editingId, {
-          make: formData.make.trim(),
-          model: formData.model.trim(),
+          make,
+          model,
           mpg,
-          registration: formData.registration.trim().toUpperCase(),
+          registration,
         });
+        await loadVehicles();
       } else {
         const newVehicle: Vehicle = {
           id: Date.now().toString(),
-          make: formData.make.trim(),
-          model: formData.model.trim(),
+          make,
+          model,
           mpg,
-          registration: formData.registration.trim().toUpperCase(),
+          registration,
         };
+        setVehicles((prev) => [...prev, newVehicle]);
+        setShowForm(false);
+        setFormData({ make: '', model: '', mpg: '', registration: '' });
         await addVehicleSupabase(supabase, newVehicle);
+        await loadVehicles();
       }
-      await loadVehicles();
-      setEditingId(null);
-      setFormData({ make: '', model: '', mpg: '', registration: '' });
-      setShowForm(false);
     } catch (e: any) {
       setError(e?.message || 'Failed to save vehicle');
+      await loadVehicles();
     }
   };
 
@@ -144,19 +165,30 @@ export default function VehicleManager() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded mb-4 text-sm">
           {error}
+          {(error.includes('policy') || error.includes('row level') || error.includes('RLS') || error.includes('permission') || error.includes('JWT')) && (
+            <p className="mt-2 text-xs">Run supabase/fix_profiles_rls_recursion.sql in Supabase SQL Editor and ensure your user has superuser/admin/manager role.</p>
+          )}
         </div>
       )}
 
-      {canManage && (
-        <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { setRefreshing(true); setError(null); loadVehicles(); }}
+          disabled={refreshing}
+          className="bg-gray-200 text-gray-800 py-2 px-4 rounded hover:bg-gray-300 disabled:opacity-50 text-sm"
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh list'}
+        </button>
+        {canManage && (
           <button
             onClick={handleAdd}
             className="bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700"
           >
             Add New Vehicle
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {showForm && canManage && (
         <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded mb-6">

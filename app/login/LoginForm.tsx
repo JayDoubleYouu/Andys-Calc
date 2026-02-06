@@ -25,7 +25,7 @@ function LoginFormInner({
     setLoading(true);
     try {
       if (!supabaseUrl || !supabaseAnonKey) {
-        setError('Sign-in is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY to .env.local, then restart the dev server (Ctrl+C, then npm run dev).');
+        setError('Sign-in is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY. On Vercel: Project Settings → Environment Variables, then redeploy. Locally: .env.local then restart the dev server.');
         setLoading(false);
         return;
       }

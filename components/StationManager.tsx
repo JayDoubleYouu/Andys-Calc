@@ -18,10 +18,11 @@ export default function StationManager() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ name: '', postcode: '' });
   const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadStations = async () => {
-    const supabase = createClient();
     try {
+      const supabase = createClient();
       const [list, role] = await Promise.all([fetchStations(supabase), getProfileRole(supabase)]);
       if (!CAN_ACCESS.includes(role)) {
         router.replace('/');
@@ -30,11 +31,13 @@ export default function StationManager() {
       setStations(list);
       setCanManage(role === 'superuser' || role === 'admin' || role === 'manager');
       setError(null);
+      router.refresh();
     } catch (e: any) {
       setError(e?.message || 'Failed to load stations');
       setStations([]);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -61,16 +64,19 @@ export default function StationManager() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this station?')) return;
+    setStations((prev) => prev.filter((s) => s.id !== id));
+    if (editingId === id) {
+      setEditingId(null);
+      setFormData({ name: '', postcode: '' });
+      setShowForm(false);
+    }
     const supabase = createClient();
     try {
       await deleteStationSupabase(supabase, id);
       await loadStations();
-      if (editingId === id) {
-        setEditingId(null);
-        setFormData({ name: '', postcode: '' });
-      }
     } catch (e: any) {
       setError(e?.message || 'Failed to delete');
+      await loadStations();
     }
   };
 
@@ -94,26 +100,35 @@ export default function StationManager() {
     }
 
     const supabase = createClient();
+    const name = formData.name.trim();
+    const postcode = formData.postcode.trim().toUpperCase();
     try {
       if (editingId) {
-        await updateStationSupabase(supabase, editingId, {
-          name: formData.name.trim(),
-          postcode: formData.postcode.trim().toUpperCase(),
-        });
+        setStations((prev) =>
+          prev.map((s) =>
+            s.id === editingId ? { ...s, name, postcode } : s
+          )
+        );
+        setShowForm(false);
+        setEditingId(null);
+        setFormData({ name: '', postcode: '' });
+        await updateStationSupabase(supabase, editingId, { name, postcode });
+        await loadStations();
       } else {
         const newStation: Station = {
           id: Date.now().toString(),
-          name: formData.name.trim(),
-          postcode: formData.postcode.trim().toUpperCase(),
+          name,
+          postcode,
         };
+        setStations((prev) => [...prev, newStation]);
+        setShowForm(false);
+        setFormData({ name: '', postcode: '' });
         await addStationSupabase(supabase, newStation);
+        await loadStations();
       }
-      await loadStations();
-      setEditingId(null);
-      setFormData({ name: '', postcode: '' });
-      setShowForm(false);
     } catch (e: any) {
       setError(e?.message || 'Failed to save station');
+      await loadStations();
     }
   };
 
@@ -137,19 +152,30 @@ export default function StationManager() {
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded mb-4 text-sm">
           {error}
+          {(error.includes('policy') || error.includes('row level') || error.includes('RLS') || error.includes('permission') || error.includes('JWT')) && (
+            <p className="mt-2 text-xs">Run supabase/fix_profiles_rls_recursion.sql in Supabase SQL Editor and ensure your user has superuser/admin/manager role.</p>
+          )}
         </div>
       )}
 
-      {canManage && (
-        <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => { setRefreshing(true); setError(null); loadStations(); }}
+          disabled={refreshing}
+          className="bg-gray-200 text-gray-800 py-2 px-4 rounded hover:bg-gray-300 disabled:opacity-50 text-sm"
+        >
+          {refreshing ? 'Refreshing…' : 'Refresh list'}
+        </button>
+        {canManage && (
           <button
             onClick={handleAdd}
             className="bg-orange-600 text-white py-2 px-4 rounded hover:bg-orange-700"
           >
             Add New Station
           </button>
-        </div>
-      )}
+        )}
+      </div>
 
       {showForm && canManage && (
         <form onSubmit={handleSubmit} className="bg-gray-50 p-4 rounded mb-6">
